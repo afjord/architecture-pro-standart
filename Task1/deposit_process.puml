@@ -1,0 +1,79 @@
+@startuml
+autonumber
+
+actor "Клиент" as Client
+actor "Сотрудник кол-центра" as CC
+participant "Система кол-центра" as CCSystem
+participant "АБС" as Abs
+
+actor "Сотрудник фронт-офиса (отделение)" as FrontManager
+actor "Сотрудник бэк-офиса (депозиты)" as DepositManager
+actor "Менеджер отдела кредитования" as CreditManager
+
+database "Excel ставок (депозиты)" as RatesXls
+participant "Почта" as Mail
+participant "SMS-шлюз" as SMS
+participant "ЦБ (ставка рефинансирования)" as CB
+
+== Ежедневный расчёт базовых ставок ==
+loop Ежедневно
+  CreditManager -> RatesXls: Собрать показатели банка\n(кол-во кредитов/депозитов, риск)
+  CreditManager -> CB: Получить ставку рефинансирования
+  CB -->> CreditManager: Ставка рефинансирования
+  CreditManager -> RatesXls: Рассчитать базовые ставки\nпо уровню кредитного риска
+  CreditManager -> Mail: Отправить Excel со ставками в бэк-офис
+  Mail -->> DepositManager: Получить Excel со ставками
+end
+
+== Варианты входа клиента ==
+alt Клиент звонил заранее в кол-центр
+  Client -> CC: Уточнение условий депозита
+  CC -> CCSystem: Завести обращение
+  CCSystem -> Abs: Передать обращение в АБС
+
+  DepositManager -> Abs: Обработать обращения кол-центра\nи определить ставку заранее
+  DepositManager -> RatesXls: Взять актуальные базовые ставки
+  DepositManager -> Abs: Указать ставку в заявке/обращении
+
+  Abs -> SMS: Отправить SMS клиенту\n"доступен депозит под ставку X"
+  SMS -->> Client: SMS со ставкой и приглашением в отделение
+
+  Client -> FrontManager: Приход в отделение для открытия депозита
+
+else Клиент пришёл без звонка
+  Client -> FrontManager: Приход в отделение\nзапрос на открытие депозита
+  FrontManager -> Mail: Письмо в бэк-офис:\n"нужна ставка для клиента"
+  Mail -->> DepositManager: Запрос на расчёт ставки
+end
+
+== Опционально: спецставка (крупные остатки) ==
+opt У клиента крупные суммы на счетах\nи требуется спецставка
+  DepositManager -> Mail: Запрос в кредитование:\n"нужны данные по риску по клиенту"
+  Mail -->> CreditManager: Запрос на риск-данные (по клиенту)
+
+  CreditManager -> Abs: Посмотреть риск-профиль клиента\nв своём разделе АБС
+  CreditManager -> Mail: Ответ письмом:\nданные по кредитному риску клиента
+  Mail -->> DepositManager: Получить риск-данные
+
+  DepositManager -> RatesXls: Добавить риск-данные клиента\nи вычислить спецставку
+  DepositManager -> Mail: Ответ в отделение:\n"ставка для клиента = X"
+  Mail -->> FrontManager: Получить ставку X
+else Базовая ставка
+  DepositManager -> RatesXls: Взять базовую ставку X
+  DepositManager -> Mail: Ответ в отделение:\n"ставка для клиента = X"
+  Mail -->> FrontManager: Получить ставку X
+end
+
+== Открытие депозита и документы ==
+FrontManager -->> Client: Озвучить ставку, условия
+Client -> FrontManager: Подтверждение открытия депозита
+
+FrontManager -> Abs: Создать депозит с согласованной ставкой
+Abs -->> FrontManager: Депозит создан, сформировать документы
+FrontManager -->> Client: Выдать документы на подпись
+
+Client -->> FrontManager: Подписанные документы
+FrontManager -> Abs: Загрузить/прикрепить подписанные документы
+Abs -->> FrontManager: Документы загружены, депозит активен
+
+@enduml
