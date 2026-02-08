@@ -1,0 +1,41 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title C4 Context Diagram — MVP «Открытие депозитов онлайн»
+
+Person(newClient, "Новый клиент", "Использует сайт банка для подачи заявки на депозит")
+Person(existingClient, "Действующий клиент", "Использует интернет-банк для открытия депозита")
+Person(ccManager, "Менеджер колл-центра", "Обрабатывает заявки новых клиентов")
+Person(boManager, "Менеджер бэк-офиса", "Подтверждает условия и открывает депозит")
+Person(foManager, "Менеджер фронт-офиса", "Проводит идентификацию клиента в отделении")
+
+System(site, "Сайт банка", "PHP + React", "Канал для новых клиентов")
+System(ib, "Интернет-банк", ".NET / ASP.NET MVC", "Канал для действующих клиентов")
+
+System(system, "Deposit Platform (MVP)", ".NET","Приём и обработка онлайн-заявок на депозиты, статусы, интеграции, уведомления")
+
+System(abs, "АБС", "Delphi + Oracle","Основная банковская система, открытие депозитов")
+
+System(callCenter, "Система колл-центра", "React + Spring Boot","Обработка заявок новых клиентов")
+
+System(smsGateway, "SMS-шлюз банка", "Java+Spring","Отправка SMS-уведомлений и OTP")
+
+System_Ext(telco, "Телеком-оператор", "Внешний","Доставка SMS")
+
+Rel(newClient, site, "Просматривает депозиты,подаёт заявку")
+Rel(existingClient, ib, "Открывает депозит,отслеживает статус")
+
+Rel(site, system, "Передаёт заявку на депозит", "HTTPS")
+Rel(ib, system, "Передаёт заявку,получает статусы", "HTTPS")
+
+Rel(system, callCenter, "Передаёт заявки новых клиентов", "HTTPS / async")
+Rel(ccManager, callCenter, "Обрабатывает заявки")
+
+Rel(system, abs, "Передаёт заявки и условия(без прямых online-вызовов)", "Интеграция / async")
+Rel(boManager, abs, "Подтверждает условия,открывает депозит")
+Rel(foManager, abs, "Идентифицирует клиента")
+
+Rel(system, smsGateway, "Отправка SMS / OTP", "HTTPS")
+Rel(smsGateway, telco, "Доставка SMS")
+
+@enduml
