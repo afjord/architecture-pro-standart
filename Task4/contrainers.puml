@@ -23,6 +23,7 @@ System_Boundary(dp, "Deposit Platform (MVP)") {
   ContainerDb(dpDb, "Deposit Platform DB", "MS SQL", "Заявки, статусы, идемпотентные ключи, история уведомлений")
   ContainerDb(ratesDb, "Rates DB", "MS SQL", "Ставки + история + workflow")
   ContainerQueue(kafka, "Kafka", "Event streaming", "События заявок/статусов, ретраи")
+  Container(ratesExport, "Rates Exporter", "Job/Worker", "Формирование файлов ставок для партнёра и доставка по согласованному каналу")
 }
 
 System_Boundary(ib, "Интернет-банк") {
@@ -39,26 +40,22 @@ System_Boundary(abs, "АБС") {
   Container(absRates, "Rates & Approval Workflow (в АБС)", "Oracle/PLSQL", "Источник истины для ставок/согласований (MVP)")
 }
 
-' UC1: Новый клиент через сайт
 Rel(newClient, site, "Просмотр депозитов, подача заявки")
 Rel(site, dpApi, "Создать заявку на депозит", "HTTPS")
 Rel(dpApi, dpDb, "Сохранить заявку/статус", "SQL")
 Rel(dpApi, callCenter, "Передать заявку для обзвона", "HTTPS / async")
 
-' UC2: Колл-центр
 Rel(ccManager, callCenter, "Обработать заявку, согласовать условия")
 Rel(callCenter, dpApi, "Обновить условия/статус заявки", "HTTPS")
 Rel(callCenter, ratesSvc, "Запрос актуальных ставок", "HTTPS")
 Rel(ratesSvc, ratesDb, "Чтение и запить ставок. Чтение истории ставок", "SQL")
 
-' UC3: Отделение / идентификация клиента (через АБС)
 Rel(foManager, absClient, "Найти заявку, провести идентификацию клиента, открыть депозит")
 Rel(absClient, absAppLogic, "Операции АБС", "LAN")
 Rel(absAppLogic, absDb, "Чтение/запись", "SQL")
 Rel(absAppLogic, absRates, "Получить/применить ставки", "SQL")
 Rel(absRates, absDb, "Ставки и workflow в АБС (MVP)", "SQL")
 
-' UC4: Действующий клиент через интернет-банк
 Rel(existingClient, ibWeb, "Подача заявки, отслеживание статуса")
 Rel(existingClient, ibMobile, "Подача заявки, отслеживание статуса")
 Rel(ibWeb, ibBackend, "UI API", "HTTPS")
@@ -67,30 +64,27 @@ Rel(ibMobile, ibBackend, "UI API", "HTTPS")
 Rel(ibBackend, ratesSvc, "Получить ставки (общие/персональные)", "HTTPS")
 Rel(ibBackend, dpApi, "Создать заявку на депозит", "HTTPS")
 
-' OTP/SMS поток (UC4, UC6)
 Rel(ibBackend, otpSvc, "Запрос OTP / подтверждение операции", "HTTPS")
 Rel(otpSvc, smsGateway, "Отправить SMS (OTP/уведомления)", "HTTPS")
 Rel(smsGateway, telco, "Доставка SMS", "External")
 
-' UC5: Бэк-офис подтверждает/открывает депозит
 Rel(boManager, absClient, "Подтвердить условия, открыть депозит, пересчитать ставку по депозитам")
 Rel(dpApi, absAdapter, "Передать заявку в АБС без прямого вызова API", "Async / batch")
 Rel(absAdapter, absDb, "Интеграция через БД (ограничение)", "DB integration")
 Rel(absAdapter, dpApi, "Вернуть статусы: ставка подтверждена/депозит открыт", "Async callbacks/events")
 Rel(absAdapter, ratesSvc , "Передача ставок по депозитам", "HTTPS")
 
-' UC6: Клиент получает статусы (SMS + UI)
 Rel(dpApi, otpSvc, "События статусов для уведомлений", "HTTPS / events")
 Rel(ibBackend, dpApi, "Получить статус заявки", "HTTPS")
 
-' Optional: event backbone
 Rel(dpApi, kafka, "Публикация событий заявок/статусов (опционально)", "Kafka")
 Rel(absAdapter, kafka, "Подписка/публикация событий (опционально)", "Kafka")
 Rel(otpSvc, kafka, "Подписка на события статусов (опционально)", "Kafka")
 
-Rel(ratesSvc, partnerCC, "Передача файла ставок по согласованному каналу", "File transfer")
+' UC2:  Выгрузка актуальных ставок для партнёра
+Rel(ratesExport, ratesSvc, "Чтение ставок для выгрузки", "HTTPS")
+Rel(ratesExport, partnerCC, "Передача файла ставок по согласованному каналу", "File transfer")
 
-' Notes for constraints
 note right of absAdapter
 Ограничение: избегать прямых прямых вызовов АБС из интернет-банка.
 end note
