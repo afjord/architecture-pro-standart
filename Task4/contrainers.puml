@@ -13,6 +13,7 @@ System_Ext(site, "Сайт банка", "PHP + React", "Канал для нов
 System_Ext(callCenter, "Система колл-центра", "React + Spring Boot", "Обработка заявок новых клиентов")
 System_Ext(smsGateway, "SMS-шлюз банка", "Внутренний сервис", "Отправка SMS")
 System_Ext(telco, "Телеком-оператор", "Внешний", "Доставка SMS")
+System_Ext(partnerCC, "Партнёрский колл-центр", "Внешняя система", "Получает ставки файлами")
 
 System_Boundary(dp, "Deposit Platform (MVP)") {
   Container(dpApi, "Deposit API", "REST (например, Java/.NET)", "Приём заявок, статусы, идемпотентность, интеграции")
@@ -86,6 +87,8 @@ Rel(ibBackend, dpApi, "Получить статус заявки", "HTTPS")
 Rel(dpApi, kafka, "Публикация событий заявок/статусов (опционально)", "Kafka")
 Rel(absAdapter, kafka, "Подписка/публикация событий (опционально)", "Kafka")
 Rel(otpSvc, kafka, "Подписка на события статусов (опционально)", "Kafka")
+
+Rel(ratesSvc, partnerCC, "Передача файла ставок по согласованному каналу", "File transfer")
 
 ' Notes for constraints
 note right of absAdapter
