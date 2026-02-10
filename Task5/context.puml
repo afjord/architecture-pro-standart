@@ -1,0 +1,43 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title C4 Context Diagram — «Заявка на кредит онлайн» (ADR-005)
+
+Person(newClient, "Новый клиент", "Подаёт заявку на кредит через сайт")
+Person(existingClient, "Действующий клиент", "Подаёт заявку на кредит через интернет-банк")
+Person(foManager, "Менеджер фронт-офиса", "Продолжает обработку заявки в отделении, идентифицирует клиента")
+
+System(site, "Сайт банка", "PHP + React", "Канал для новых клиентов")
+System(ib, "Интернет-банк", ".NET", "Канал для действующих клиентов")
+
+System(credit, "Credit Platform", ".NET", "Приём и обработка онлайн-заявок на кредиты: статусы, интеграции, уведомления")
+
+System(abs, "АБС", "Delphi + Oracle", "Основная банковская система: оформление кредита, идентификация клиента")
+System(cc, "Кредитный конвейер", "Camunda + Oracle", "Хранение условий кредитов, workflow обработки заявок")
+
+System(scoring, "Система кредитного скоринга", "Python + Flask + PostgreSQL", "Расчёт скоринга и предодобренных предложений")
+System_Ext(bki, "БКИ", "Внешняя система", "Данные кредитной истории по REST API")
+
+System(smsGateway, "SMS-шлюз банка", "Внутренний сервис", "Отправка SMS-уведомлений и OTP")
+System_Ext(telco, "Телеком-оператор", "Внешний", "Доставка SMS")
+
+Rel(newClient, site, "Подаёт заявку на кредит")
+Rel(existingClient, ib, "Подаёт заявку на кредит, отслеживает статус")
+
+Rel(site, credit, "Передаёт заявку на кредит", "HTTPS")
+Rel(ib, credit, "Передаёт заявку, получает статусы", "HTTPS")
+
+Rel(credit, bki, "Запрос данных кредитной истории (sync)", "REST/HTTPS")
+Rel(credit, scoring, "Запрос скоринга (on-demand)", "REST/HTTPS")
+
+Rel(scoring, credit, "Передаёт результаты предрасчётов по регламенту", "async/регламент")
+Rel(credit, cc, "Создание/обновление заявки в workflow", "HTTPS/async")
+Rel(credit, abs, "Передаёт заявку для оформления (без онлайн нагрузки на АБС)", "async/интеграция")
+
+Rel(foManager, credit, "Находит заявку по сквозному ID, проверяет статус")
+Rel(foManager, abs, "Идентифицирует клиента, оформляет кредит")
+
+Rel(credit, smsGateway, "SMS уведомления / OTP", "HTTPS")
+Rel(smsGateway, telco, "Доставка SMS")
+
+@enduml

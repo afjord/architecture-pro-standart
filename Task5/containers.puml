@@ -1,0 +1,59 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title C4 Container Diagram — «Заявка на кредит онлайн» (ADR-005)
+
+Person(newClient, "Новый клиент", "Подаёт заявку на кредит через сайт банка")
+Person(existingClient, "Действующий клиент", "Подаёт заявку на кредит через интернет-банк")
+Person(foManager, "Менеджер фронт-офиса", "Идентифицирует клиента в отделении и оформляет кредит")
+
+System_Boundary(channels, "Каналы") {
+  Container(site, "Сайт банка", "PHP + React", "Форма заявки на кредит для новых клиентов")
+  Container(ib, "Интернет-банк", ".NET / ASP.NET MVC", "Подача заявки на кредит для действующих клиентов, просмотр статусов")
+}
+
+System_Boundary(creditBoundary, "Credit Platform") {
+  Container(creditApi, "Credit API", ".NET", "HTTP API для каналов: регистрация заявки, статусы, офферы, валидация, маршрутизация")
+  ContainerDb(creditDb, "Credit DB", "MS SQL", "Хранение заявок, статусов, сквозных идентификаторов, аудита, истории изменений")
+  Container(preapproveStore, "Pre-Approved Offers Store", "Redis (опционально)", "Кэш/витрина предодобренных предложений для быстрого вывода в интернет-банке")
+  Container(asyncWorker, "Credit Workers", ".NET", "Фоновые воркеры: интеграции (БКИ, скоринг, конвейер, АБС), ретраи, outbox, плановые обновления витрины")
+  Container(notify, "Notification Adapter", ".NET", "Отправка SMS-уведомлений и OTP через SMS-шлюз банка. Ретраи.")
+  Container(observ, "Observability", "Prometheus/Grafana/ELK", "Метрики, логи, трассировка по сквозному ID (SLA БКИ/скоринга)")
+}
+
+System(abs, "АБС", "Delphi + Oracle", "Оформление кредита, идентификация клиента, бухгалтерский учёт")
+System(cc, "Кредитный конвейер", "Camunda + Oracle", "Workflow обработки кредитной заявки и условия продуктов")
+System(scoring, "Система кредитного скоринга", "Python + Flask + PostgreSQL", "Расчёт скоринга и решений/предодобрений")
+System_Ext(bki, "БКИ", "Внешняя система", "Данные кредитной истории по REST API")
+
+System(smsGateway, "SMS-шлюз банка", "Внутренний сервис", "Отправка SMS-уведомлений/OTP")
+System_Ext(telco, "Телеком-оператор", "Внешний", "Доставка SMS")
+
+Rel(newClient, site, "Заполняет заявку на кредит")
+Rel(existingClient, ib, "Подаёт заявку, смотрит статус/офферы")
+
+Rel(site, creditApi, "Регистрация заявки / статусы", "HTTPS")
+Rel(ib, creditApi, "Регистрация заявки / статусы / офферы", "HTTPS")
+
+Rel(creditApi, creditDb, "CRUD заявок, статусов, аудита", "JDBC/ORM")
+Rel(creditApi, preapproveStore, "Чтение предодобренных офферов (опционально)", "TCP")
+Rel(asyncWorker, creditDb, "Читает/пишет заявки, outbox, ретраи", "JDBC/ORM")
+Rel(asyncWorker, preapproveStore, "Обновляет витрину офферов (опционально)", "TCP")
+Rel(creditApi, observ, "Метрики/логи/трейсы", "OTel/HTTP")
+Rel(asyncWorker, observ, "Метрики/логи/трейсы", "OTel/HTTP")
+
+Rel(asyncWorker, bki, "Запрос кредитной истории", "REST/HTTPS")
+Rel(asyncWorker, scoring, "Запрос скоринга по требованию", "REST/HTTPS")
+
+Rel(asyncWorker, cc, "Создание/обновление заявки в workflow", "HTTPS/async")
+Rel(asyncWorker, abs, "Передача заявки для оформления (без online нагрузки)", "async/интеграция")
+
+Rel(foManager, abs, "Идентификация и оформление кредита")
+Rel(foManager, creditApi, "Поиск заявки по сквозному ID / проверка статуса", "HTTPS")
+
+Rel(creditApi, notify, "Триггер уведомлений по событиям статуса", "async (внутри платформы)")
+Rel(asyncWorker, notify, "Уведомления по завершению интеграций", "async (внутри платформы)")
+Rel(notify, smsGateway, "Отправка SMS/OTP", "HTTPS")
+Rel(smsGateway, telco, "Доставка SMS", "External")
+
+@enduml
