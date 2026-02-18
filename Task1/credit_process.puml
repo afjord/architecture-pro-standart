@@ -1,0 +1,68 @@
+@startuml
+autonumber
+
+actor Клиент as User
+actor "Сотрудник в отделении" as FrontManager
+participant "АБС" as Abs
+database "БД АБС" as AbsDb
+participant "Кредитный конвейер" as Conveyor
+database "БД конвейера" as ConvDb
+actor "Менеджер отдела кредитования" as CreditManager
+participant "Система кредитного скоринга" as Css
+participant "Бюро кредитных историй" as Bch
+participant "Batch/ETL" as Etl
+
+User ->> FrontManager: Подача заявки на кредит
+FrontManager ->> Abs: Создание заявки
+Abs ->> AbsDb: Сохранение заявки
+AbsDb -->> Abs: OK
+Abs -->> FrontManager: Заявка зарегистрирована
+FrontManager -->> User: Сообщить, что заявка будет рассмотрена
+
+...ожидание суточной выгрузки...
+Etl ->> AbsDb: Забрать новые заявки
+Etl ->> ConvDb: Записать заявки
+Etl -->> Conveyor: Обновление данных (batch)
+
+CreditManager ->> Conveyor: Открыть заявку в работе
+Conveyor ->> ConvDb: Получить детали заявки
+
+Conveyor ->> Css: Запрос скоринга (по заявке)
+Css ->> Bch: Онлайн-запрос кредитной истории
+Bch -->> Css: Данные БКИ
+Css ->> Css: Использовать ранее синхронизированные\nданные АБС/платежей и номера платежей из конвейера
+Css -->> Conveyor: Скоринговая оценка/рекомендация
+
+Conveyor -->> CreditManager: Показать заявку + оценку
+CreditManager ->> CreditManager: Принять решение
+
+alt Одобрено
+  CreditManager ->> Conveyor: Перевести в финальный статус (одобрено)
+else Отказ
+  CreditManager ->> Conveyor: Перевести в финальный статус (отказ)
+end
+
+...ожидание суточной синхронизации статусов...
+Etl ->> ConvDb: Забрать финальные статусы
+Etl ->> AbsDb: Записать статусы/решения в АБС
+
+opt Если одобрено
+  Abs ->> Abs: Провести выдачу/зачисление
+  Abs -->> User: Средства зачислены на счёт (или уведомление)
+end
+
+== Суточная синхронизация данных в скоринг ==
+loop Раз в сутки
+  par Клиенты из АБС
+    Etl ->> AbsDb: Забрать данные клиентов
+    Etl ->> Css: Отправить данные клиентов
+  else Платежи (история оплат) из АБС
+    Etl ->> AbsDb: Забрать платежи
+    Etl ->> Css: Отправить платежи
+  else Номера платежей из конвейера
+    Etl ->> ConvDb: Забрать номера платежей
+    Etl ->> Css: Отправить номера платежей
+  end
+end
+
+@enduml

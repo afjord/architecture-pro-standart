@@ -1,0 +1,97 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title C4 Container Diagram — MVP «Открытие депозитов онлайн»
+
+Person(newClient, "Новый клиент", "Подаёт заявку на депозит через сайт")
+Person(existingClient, "Действующий клиент", "Открывает депозит через интернет-банк")
+Person(ccManager, "Менеджер колл-центра", "Обрабатывает заявку нового клиента")
+Person(boManager, "Менеджер бэк-офиса", "Подтверждает условия и открывает депозит")
+Person(foManager, "Менеджер фронт-офиса", "Идентифицирует клиента в отделении")
+
+System_Ext(site, "Сайт банка", "PHP + React", "Канал для новых клиентов")
+System_Ext(callCenter, "Система колл-центра", "React + Spring Boot", "Обработка заявок новых клиентов")
+System_Ext(smsGateway, "SMS-шлюз банка", "Внутренний сервис", "Отправка SMS")
+System_Ext(telco, "Телеком-оператор", "Внешний", "Доставка SMS")
+System_Ext(partnerCC, "Партнёрский колл-центр", "Внешняя система", "Получает ставки файлами")
+
+System_Boundary(dp, "Deposit Platform (MVP)") {
+  Container(dpApi, "Deposit API", "REST (например, Java/.NET)", "Приём заявок, статусы, идемпотентность, интеграции")
+  Container(ratesSvc, "Rates Service", "REST", "Ставки депозитов: чтение/редактирование, workflow, история")
+  Container(otpSvc, "OTP/SMS Orchestrator", "REST", "OTP-поток и уведомления о статусах")
+  Container(absAdapter, "ABS Integration Adapter", "Async / batch / DB integration", "Щадящая передача заявок и получение статусов из АБС без прямого вызова API")
+  ContainerDb(dpDb, "Deposit Platform DB", "MS SQL", "Заявки, статусы, идемпотентные ключи, история уведомлений")
+  ContainerDb(ratesDb, "Rates DB", "MS SQL", "Ставки + история + workflow")
+  ContainerQueue(kafka, "Kafka", "Event streaming", "События заявок/статусов, ретраи")
+  Container(ratesExport, "Rates Exporter", "Job/Worker", "Формирование файлов ставок для партнёра и доставка по согласованному каналу")
+}
+
+System_Boundary(ib, "Интернет-банк") {
+  Container(ibWeb, "IB Web UI", "Web", "Раздел депозитов/заявок, просмотр статуса")
+  Container(ibMobile, "IB Mobile UI", "Mobile", "Раздел депозитов/заявок, просмотр статуса")
+  Container(ibBackend, "IB Backend (монолит)", ".NET / ASP.NET MVC", "Бизнес-логика ИБ, авторизация, UI API")
+  Container(ibSmsCore, "IB Core SMS Module", "В составе ядра подрядчика", "Текущее SMS/OTP в ядре (изменения нежелательны)")
+}
+
+System_Boundary(abs, "АБС") {
+  Container(absClient, "ABS Desktop Client", "Delphi", "Рабочее место фронт-/бэк-офиса")
+  Container(absAppLogic, "ABS DB Logic", "PL/SQL (Oracle)", "Основная бизнес-логика, открытие депозита, идентификация клиента")
+  ContainerDb(absDb, "ABS Oracle DB", "Oracle", "Счета, клиенты, депозиты, ставки, заявки/сущности АБС")
+  Container(absRates, "Rates & Approval Workflow (в АБС)", "Oracle/PLSQL", "Источник истины для ставок/согласований (MVP)")
+}
+
+Rel(newClient, site, "Просмотр депозитов, подача заявки")
+Rel(site, dpApi, "Создать заявку на депозит", "HTTPS")
+Rel(dpApi, dpDb, "Сохранить заявку/статус", "SQL")
+Rel(dpApi, callCenter, "Передать заявку для обзвона", "HTTPS / async")
+
+Rel(ccManager, callCenter, "Обработать заявку, согласовать условия")
+Rel(callCenter, dpApi, "Обновить условия/статус заявки", "HTTPS")
+Rel(callCenter, ratesSvc, "Запрос актуальных ставок", "HTTPS")
+Rel(ratesSvc, ratesDb, "Чтение и запить ставок. Чтение истории ставок", "SQL")
+
+Rel(foManager, absClient, "Найти заявку, провести идентификацию клиента, открыть депозит")
+Rel(absClient, absAppLogic, "Операции АБС", "LAN")
+Rel(absAppLogic, absDb, "Чтение/запись", "SQL")
+Rel(absAppLogic, absRates, "Получить/применить ставки", "SQL")
+Rel(absRates, absDb, "Ставки и workflow в АБС (MVP)", "SQL")
+
+Rel(existingClient, ibWeb, "Подача заявки, отслеживание статуса")
+Rel(existingClient, ibMobile, "Подача заявки, отслеживание статуса")
+Rel(ibWeb, ibBackend, "UI API", "HTTPS")
+Rel(ibMobile, ibBackend, "UI API", "HTTPS")
+
+Rel(ibBackend, ratesSvc, "Получить ставки (общие/персональные)", "HTTPS")
+Rel(ibBackend, dpApi, "Создать заявку на депозит", "HTTPS")
+
+Rel(ibBackend, otpSvc, "Запрос OTP / подтверждение операции", "HTTPS")
+Rel(otpSvc, smsGateway, "Отправить SMS (OTP/уведомления)", "HTTPS")
+Rel(smsGateway, telco, "Доставка SMS", "External")
+
+Rel(boManager, absClient, "Подтвердить условия, открыть депозит, пересчитать ставку по депозитам")
+Rel(dpApi, absAdapter, "Передать заявку в АБС без прямого вызова API", "Async / batch")
+Rel(absAdapter, absDb, "Интеграция через БД (ограничение)", "DB integration")
+Rel(absAdapter, dpApi, "Вернуть статусы: ставка подтверждена/депозит открыт", "Async callbacks/events")
+Rel(absAdapter, ratesSvc , "Передача ставок по депозитам", "HTTPS")
+
+Rel(dpApi, otpSvc, "События статусов для уведомлений", "HTTPS / events")
+Rel(ibBackend, dpApi, "Получить статус заявки", "HTTPS")
+
+Rel(dpApi, kafka, "Публикация событий заявок/статусов (опционально)", "Kafka")
+Rel(absAdapter, kafka, "Подписка/публикация событий (опционально)", "Kafka")
+Rel(otpSvc, kafka, "Подписка на события статусов (опционально)", "Kafka")
+
+' UC2:  Выгрузка актуальных ставок для партнёра
+Rel(ratesExport, ratesSvc, "Чтение ставок для выгрузки", "HTTPS")
+Rel(ratesExport, partnerCC, "Передача файла ставок по согласованному каналу", "File transfer")
+
+note right of absAdapter
+Ограничение: избегать прямых прямых вызовов АБС из интернет-банка.
+end note
+
+note right of ibSmsCore
+SMS в ядре интернет-банка у подрядчика.
+MVP стремится минимизировать доработки ядра: оркестрация OTP/SMS вынесена в отдельный сервис.
+end note
+
+@enduml
